@@ -43,20 +43,33 @@ def upgrade() -> None:
         sa.Column("source_quality", sa.Integer, server_default="1"),
         sa.PrimaryKeyConstraint("ts", "symbol", "timeframe"),
     )
-    # Try to enable TimescaleDB + create hypertable (gracefully skip on vanilla Postgres)
+    # Try to enable TimescaleDB + create hypertable.
+    # All TimescaleDB calls use savepoints so a failure (e.g. Apache-license
+    # restriction, vanilla Postgres) rolls back only that statement and leaves
+    # the surrounding Alembic transaction intact.
     conn = op.get_bind()
     has_timescale = False
+
+    conn.execute(sa.text("SAVEPOINT ts_ext"))
     try:
         conn.execute(sa.text("CREATE EXTENSION IF NOT EXISTS timescaledb"))
+        conn.execute(sa.text("RELEASE SAVEPOINT ts_ext"))
         has_timescale = True
     except Exception:
-        pass
+        conn.execute(sa.text("ROLLBACK TO SAVEPOINT ts_ext"))
 
     if has_timescale:
-        op.execute(
-            "SELECT create_hypertable('ohlcv_bars', 'ts', "
-            "if_not_exists => TRUE, chunk_time_interval => INTERVAL '7 days')"
-        )
+        conn.execute(sa.text("SAVEPOINT ts_hyper"))
+        try:
+            conn.execute(sa.text(
+                "SELECT create_hypertable('ohlcv_bars', 'ts', "
+                "if_not_exists => TRUE, chunk_time_interval => INTERVAL '7 days')"
+            ))
+            conn.execute(sa.text("RELEASE SAVEPOINT ts_hyper"))
+        except Exception:
+            conn.execute(sa.text("ROLLBACK TO SAVEPOINT ts_hyper"))
+            has_timescale = False
+
     op.create_index("ix_ohlcv_symbol_tf_ts", "ohlcv_bars", ["symbol", "timeframe", "ts"])
 
     # --- Strategies ---
@@ -166,18 +179,20 @@ def upgrade() -> None:
     )
 
     # --- Continuous aggregate views for 5m/15m/1h/4h/1d (TimescaleDB only) ---
-    # Requires the Timescale license; the Apache-licensed build (e.g. Render)
-    # supports hypertables but not continuous aggregates — skip gracefully.
+    # Requires the full Timescale license. Each view is wrapped in its own
+    # savepoint so a failure (Apache license, vanilla Postgres) rolls back only
+    # that statement without aborting the surrounding Alembic transaction.
     if has_timescale:
-        try:
-            for bucket, name in [
-                ("5 minutes",  "ohlcv_5m"),
-                ("15 minutes", "ohlcv_15m"),
-                ("1 hour",     "ohlcv_1h"),
-                ("4 hours",    "ohlcv_4h"),
-                ("1 day",      "ohlcv_1d"),
-            ]:
-                op.execute(f"""
+        for bucket, name in [
+            ("5 minutes",  "ohlcv_5m"),
+            ("15 minutes", "ohlcv_15m"),
+            ("1 hour",     "ohlcv_1h"),
+            ("4 hours",    "ohlcv_4h"),
+            ("1 day",      "ohlcv_1d"),
+        ]:
+            conn.execute(sa.text(f"SAVEPOINT ts_cagg_{name}"))
+            try:
+                conn.execute(sa.text(f"""
                 CREATE MATERIALIZED VIEW IF NOT EXISTS {name}
                 WITH (timescaledb.continuous) AS
                 SELECT
@@ -192,9 +207,11 @@ def upgrade() -> None:
                 WHERE timeframe = '1m'
                 GROUP BY bucket, symbol
                 WITH NO DATA;
-                """)
-        except Exception:
-            pass  # Apache-licensed TimescaleDB; continuous aggregates not available
+                """))
+                conn.execute(sa.text(f"RELEASE SAVEPOINT ts_cagg_{name}"))
+            except Exception:
+                conn.execute(sa.text(f"ROLLBACK TO SAVEPOINT ts_cagg_{name}"))
+                break  # if first view fails (license), all will fail — skip rest
 
 
 def downgrade() -> None:
