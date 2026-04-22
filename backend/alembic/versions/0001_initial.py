@@ -43,11 +43,20 @@ def upgrade() -> None:
         sa.Column("source_quality", sa.Integer, server_default="1"),
         sa.PrimaryKeyConstraint("ts", "symbol", "timeframe"),
     )
-    # Create TimescaleDB hypertable (chunk by 7-day intervals)
-    op.execute(
-        "SELECT create_hypertable('ohlcv_bars', 'ts', "
-        "if_not_exists => TRUE, chunk_time_interval => INTERVAL '7 days')"
-    )
+    # Try to enable TimescaleDB + create hypertable (gracefully skip on vanilla Postgres)
+    conn = op.get_bind()
+    has_timescale = False
+    try:
+        conn.execute(sa.text("CREATE EXTENSION IF NOT EXISTS timescaledb"))
+        has_timescale = True
+    except Exception:
+        pass
+
+    if has_timescale:
+        op.execute(
+            "SELECT create_hypertable('ohlcv_bars', 'ts', "
+            "if_not_exists => TRUE, chunk_time_interval => INTERVAL '7 days')"
+        )
     op.create_index("ix_ohlcv_symbol_tf_ts", "ohlcv_bars", ["symbol", "timeframe", "ts"])
 
     # --- Strategies ---
@@ -156,30 +165,31 @@ def upgrade() -> None:
         sa.Column("status",          sa.String(32), server_default="'stopped'"),
     )
 
-    # --- Continuous aggregate views for 5m/15m/1h/4h/1d ---
-    for bucket, name in [
-        ("5 minutes",  "ohlcv_5m"),
-        ("15 minutes", "ohlcv_15m"),
-        ("1 hour",     "ohlcv_1h"),
-        ("4 hours",    "ohlcv_4h"),
-        ("1 day",      "ohlcv_1d"),
-    ]:
-        op.execute(f"""
-        CREATE MATERIALIZED VIEW IF NOT EXISTS {name}
-        WITH (timescaledb.continuous) AS
-        SELECT
-            time_bucket('{bucket}', ts) AS bucket,
-            symbol,
-            first(open,  ts) AS open,
-            max(high)        AS high,
-            min(low)         AS low,
-            last(close, ts)  AS close,
-            sum(volume)      AS volume
-        FROM ohlcv_bars
-        WHERE timeframe = '1m'
-        GROUP BY bucket, symbol
-        WITH NO DATA;
-        """)
+    # --- Continuous aggregate views for 5m/15m/1h/4h/1d (TimescaleDB only) ---
+    if has_timescale:
+        for bucket, name in [
+            ("5 minutes",  "ohlcv_5m"),
+            ("15 minutes", "ohlcv_15m"),
+            ("1 hour",     "ohlcv_1h"),
+            ("4 hours",    "ohlcv_4h"),
+            ("1 day",      "ohlcv_1d"),
+        ]:
+            op.execute(f"""
+            CREATE MATERIALIZED VIEW IF NOT EXISTS {name}
+            WITH (timescaledb.continuous) AS
+            SELECT
+                time_bucket('{bucket}', ts) AS bucket,
+                symbol,
+                first(open,  ts) AS open,
+                max(high)        AS high,
+                min(low)         AS low,
+                last(close, ts)  AS close,
+                sum(volume)      AS volume
+            FROM ohlcv_bars
+            WHERE timeframe = '1m'
+            GROUP BY bucket, symbol
+            WITH NO DATA;
+            """)
 
 
 def downgrade() -> None:

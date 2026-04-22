@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -16,6 +17,19 @@ config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
+
+# Override sqlalchemy.url from DATABASE_URL env var (Render/production)
+_db_url = os.getenv("DATABASE_URL", "")
+if _db_url:
+    # Render provides `postgresql://` but SQLAlchemy + asyncpg needs `postgresql+asyncpg://`
+    if _db_url.startswith("postgresql://"):
+        _db_url = _db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    elif _db_url.startswith("postgres://"):
+        _db_url = _db_url.replace("postgres://", "postgresql+asyncpg://", 1)
+    # Strip `?sslmode=...` — asyncpg uses `ssl=` parameter instead
+    if "?sslmode=" in _db_url:
+        _db_url = _db_url.split("?sslmode=")[0]
+    config.set_main_option("sqlalchemy.url", _db_url)
 
 target_metadata = Base.metadata
 

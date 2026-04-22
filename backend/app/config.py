@@ -87,6 +87,19 @@ class Settings(BaseSettings):
         """Split comma-separated CORS origins string into a list."""
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
+    @field_validator("database_url")
+    @classmethod
+    def normalise_database_url(cls, v: str) -> str:
+        """Render provides 'postgresql://' but SQLAlchemy + asyncpg needs 'postgresql+asyncpg://'."""
+        if v.startswith("postgresql://"):
+            v = v.replace("postgresql://", "postgresql+asyncpg://", 1)
+        elif v.startswith("postgres://"):
+            v = v.replace("postgres://", "postgresql+asyncpg://", 1)
+        # Strip `?sslmode=...` — asyncpg uses ssl= parameter instead
+        if "?sslmode=" in v:
+            v = v.split("?sslmode=")[0]
+        return v
+
     @field_validator("secret_key")
     @classmethod
     def secret_key_min_length(cls, v: str) -> str:
