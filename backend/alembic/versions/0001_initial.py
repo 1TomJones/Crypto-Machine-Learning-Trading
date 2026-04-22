@@ -166,30 +166,35 @@ def upgrade() -> None:
     )
 
     # --- Continuous aggregate views for 5m/15m/1h/4h/1d (TimescaleDB only) ---
+    # Requires the Timescale license; the Apache-licensed build (e.g. Render)
+    # supports hypertables but not continuous aggregates — skip gracefully.
     if has_timescale:
-        for bucket, name in [
-            ("5 minutes",  "ohlcv_5m"),
-            ("15 minutes", "ohlcv_15m"),
-            ("1 hour",     "ohlcv_1h"),
-            ("4 hours",    "ohlcv_4h"),
-            ("1 day",      "ohlcv_1d"),
-        ]:
-            op.execute(f"""
-            CREATE MATERIALIZED VIEW IF NOT EXISTS {name}
-            WITH (timescaledb.continuous) AS
-            SELECT
-                time_bucket('{bucket}', ts) AS bucket,
-                symbol,
-                first(open,  ts) AS open,
-                max(high)        AS high,
-                min(low)         AS low,
-                last(close, ts)  AS close,
-                sum(volume)      AS volume
-            FROM ohlcv_bars
-            WHERE timeframe = '1m'
-            GROUP BY bucket, symbol
-            WITH NO DATA;
-            """)
+        try:
+            for bucket, name in [
+                ("5 minutes",  "ohlcv_5m"),
+                ("15 minutes", "ohlcv_15m"),
+                ("1 hour",     "ohlcv_1h"),
+                ("4 hours",    "ohlcv_4h"),
+                ("1 day",      "ohlcv_1d"),
+            ]:
+                op.execute(f"""
+                CREATE MATERIALIZED VIEW IF NOT EXISTS {name}
+                WITH (timescaledb.continuous) AS
+                SELECT
+                    time_bucket('{bucket}', ts) AS bucket,
+                    symbol,
+                    first(open,  ts) AS open,
+                    max(high)        AS high,
+                    min(low)         AS low,
+                    last(close, ts)  AS close,
+                    sum(volume)      AS volume
+                FROM ohlcv_bars
+                WHERE timeframe = '1m'
+                GROUP BY bucket, symbol
+                WITH NO DATA;
+                """)
+        except Exception:
+            pass  # Apache-licensed TimescaleDB; continuous aggregates not available
 
 
 def downgrade() -> None:
