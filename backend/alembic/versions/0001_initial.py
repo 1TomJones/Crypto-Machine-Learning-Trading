@@ -66,7 +66,7 @@ def upgrade() -> None:
         sa.Column("name",        sa.String(128), nullable=False),
         sa.Column("description", sa.Text, nullable=True),
         sa.Column("config",      postgresql.JSONB, nullable=True),
-        sa.Column("status",      sa.String(32), server_default="'draft'"),
+        sa.Column("status",      sa.String(32), server_default=sa.text("'draft'")),
         sa.Column("created_at",  sa.DateTime(timezone=True), server_default=sa.text("NOW()")),
         sa.Column("updated_at",  sa.DateTime(timezone=True), server_default=sa.text("NOW()")),
     )
@@ -90,7 +90,7 @@ def upgrade() -> None:
         sa.Column("strategy_id", sa.String(64), nullable=False),
         sa.Column("config",      postgresql.JSONB, nullable=True),
         sa.Column("results",     postgresql.JSONB, nullable=True),
-        sa.Column("status",      sa.String(32), server_default="'pending'"),
+        sa.Column("status",      sa.String(32), server_default=sa.text("'pending'")),
         sa.Column("created_at",  sa.DateTime(timezone=True), server_default=sa.text("NOW()")),
         sa.Column("completed_at",sa.DateTime(timezone=True), nullable=True),
     )
@@ -109,7 +109,7 @@ def upgrade() -> None:
         sa.Column("filled_qty",        sa.Float, server_default="0"),
         sa.Column("avg_fill_price",    sa.Float, nullable=True),
         sa.Column("price",             sa.Float, nullable=True),
-        sa.Column("status",            sa.String(16), server_default="'pending'"),
+        sa.Column("status",            sa.String(16), server_default=sa.text("'pending'")),
         sa.Column("reduce_only",       sa.Boolean, server_default="FALSE"),
         sa.Column("raw_data",          postgresql.JSONB, nullable=True),
         sa.Column("created_at",        sa.DateTime(timezone=True), server_default=sa.text("NOW()")),
@@ -138,7 +138,7 @@ def upgrade() -> None:
         sa.Column("max_open_orders",         sa.Integer, server_default="5"),
         sa.Column("max_order_rate_per_min",  sa.Integer, server_default="30"),
         sa.Column("leverage_limit",          sa.Float, server_default="1.0"),
-        sa.Column("symbol_whitelist",        postgresql.JSONB, server_default="'[\"BTC/USDT\"]'::jsonb"),
+        sa.Column("symbol_whitelist",        postgresql.JSONB, server_default=sa.text("'[\"BTC/USDT\"]'::jsonb")),
         sa.Column("updated_at",              sa.DateTime(timezone=True), server_default=sa.text("NOW()")),
     )
     # Insert default row (id=1)
@@ -162,7 +162,7 @@ def upgrade() -> None:
         sa.Column("ts",              sa.DateTime(timezone=True), server_default=sa.text("NOW()")),
         sa.Column("trading_enabled", sa.Boolean, server_default="FALSE"),
         sa.Column("equity",          sa.Float, nullable=True),
-        sa.Column("status",          sa.String(32), server_default="'stopped'"),
+        sa.Column("status",          sa.String(32), server_default=sa.text("'stopped'")),
     )
 
     # --- Continuous aggregate views for 5m/15m/1h/4h/1d (TimescaleDB only) ---
