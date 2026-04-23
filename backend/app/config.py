@@ -34,9 +34,10 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
 
-    # Admin credentials (password stored as bcrypt hash)
+    # Admin credentials — set either ADMIN_PASSWORD (plain) or ADMIN_PASSWORD_HASH (bcrypt)
     admin_username: str = "admin"
-    admin_password_hash: str = ""
+    admin_password: str = ""        # plain text — hashed at startup
+    admin_password_hash: str = ""   # pre-hashed bcrypt — used if admin_password is unset
 
     # ── Application ───────────────────────────────────────────────────────────
     environment: str = "development"

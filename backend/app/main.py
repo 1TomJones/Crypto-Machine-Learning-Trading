@@ -71,13 +71,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await init_db()
     log.info("database_ready")
 
-    # Seed / resync admin user from ADMIN_PASSWORD_HASH on every startup so that
-    # rotating the env var is sufficient to reset the password (no DB access needed).
-    if settings.admin_password_hash:
+    # Seed / resync admin user on every startup.
+    # ADMIN_PASSWORD (plain text) takes priority over ADMIN_PASSWORD_HASH.
+    # Changing either env var + redeploy is enough to reset the password.
+    _plain_pw = settings.admin_password
+    _hash_pw = settings.admin_password_hash
+    if _plain_pw or _hash_pw:
+        from passlib.context import CryptContext as _CryptContext
         from sqlalchemy import select as sa_select
 
         from app.database import _get_session_factory
         from app.db_models import User
+
+        _pwd = _CryptContext(schemes=["bcrypt"], deprecated="auto")
+        target_hash = _pwd.hash(_plain_pw) if _plain_pw else _hash_pw
 
         factory = _get_session_factory()
         async with factory() as session:
@@ -89,15 +96,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 session.add(
                     User(
                         username=settings.admin_username,
-                        hashed_password=settings.admin_password_hash,
+                        hashed_password=target_hash,
                         is_active=True,
                         is_superuser=True,
                     )
                 )
                 await session.commit()
                 log.info("admin_user_seeded", username=settings.admin_username)
-            elif existing.hashed_password != settings.admin_password_hash:
-                existing.hashed_password = settings.admin_password_hash
+            else:
+                existing.hashed_password = target_hash
                 existing.is_active = True
                 existing.is_superuser = True
                 await session.commit()
