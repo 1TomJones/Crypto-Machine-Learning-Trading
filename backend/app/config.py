@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     # ── Application ───────────────────────────────────────────────────────────
     environment: str = "development"
     log_level: str = "INFO"
-    cors_origins: str = "http://localhost:3000"
+    cors_origins: str = "http://localhost:3000,http://localhost:5173"
 
     # ── Exchange APIs ─────────────────────────────────────────────────────────
     binance_base_url: str = "https://data-api.binance.vision"

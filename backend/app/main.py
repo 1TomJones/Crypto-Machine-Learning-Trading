@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import contextlib
 import time
+from pathlib import Path
 from typing import AsyncGenerator
 
 import orjson
@@ -11,7 +12,8 @@ import sentry_sdk
 import structlog
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -26,6 +28,11 @@ log = structlog.get_logger(__name__)
 # Rate limiter (shared across routers)
 # ---------------------------------------------------------------------------
 limiter = Limiter(key_func=get_remote_address)
+
+# Path to the built React SPA — populated by the Render build command:
+#   cd frontend && npm install && npm run build
+#   cp -r dist ../backend/frontend_dist
+FRONTEND_DIST = Path(__file__).parent.parent / "frontend_dist"
 
 
 # ---------------------------------------------------------------------------
@@ -60,9 +67,33 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         )
         log.info("sentry_initialised", dsn_set=True)
 
-    # Database
+    # Database — create_all ensures ORM-defined tables exist
     await init_db()
     log.info("database_ready")
+
+    # Seed admin user if ADMIN_PASSWORD_HASH is configured and user doesn't exist
+    if settings.admin_password_hash:
+        from sqlalchemy import select as sa_select
+
+        from app.database import _get_session_factory
+        from app.db_models import User
+
+        factory = _get_session_factory()
+        async with factory() as session:
+            result = await session.execute(
+                sa_select(User).where(User.username == settings.admin_username)
+            )
+            if result.scalar_one_or_none() is None:
+                session.add(
+                    User(
+                        username=settings.admin_username,
+                        hashed_password=settings.admin_password_hash,
+                        is_active=True,
+                        is_superuser=True,
+                    )
+                )
+                await session.commit()
+                log.info("admin_user_seeded", username=settings.admin_username)
 
     # Redis
     redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
@@ -97,11 +128,13 @@ def create_app() -> FastAPI:
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-    # CORS
+    # CORS — `allow_credentials=True` is incompatible with `allow_origins=["*"]`
+    # per the CORS spec, so we disable credentials when the wildcard is used.
+    origins = settings.cors_origins_list
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origins_list,
-        allow_credentials=True,
+        allow_origins=origins,
+        allow_credentials="*" not in origins,
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -123,20 +156,20 @@ def create_app() -> FastAPI:
 
     # Routers
     from app.api.auth import router as auth_router
-    from app.api.data import router as data_router
-    from app.api.strategies import router as strategies_router
-    from app.api.models_api import router as models_router
     from app.api.backtest import router as backtest_router
+    from app.api.data import router as data_router
     from app.api.live import router as live_router
+    from app.api.models_api import router as models_router
     from app.api.risk import router as risk_router
+    from app.api.strategies import router as strategies_router
 
-    app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
-    app.include_router(data_router, prefix="/api/data", tags=["data"])
+    app.include_router(auth_router,       prefix="/api/auth",       tags=["auth"])
+    app.include_router(data_router,       prefix="/api/data",       tags=["data"])
     app.include_router(strategies_router, prefix="/api/strategies", tags=["strategies"])
-    app.include_router(models_router, prefix="/api/models", tags=["models"])
-    app.include_router(backtest_router, prefix="/api/backtest", tags=["backtest"])
-    app.include_router(live_router, prefix="/api/live", tags=["live"])
-    app.include_router(risk_router, prefix="/api/risk", tags=["risk"])
+    app.include_router(models_router,     prefix="/api/models",     tags=["models"])
+    app.include_router(backtest_router,   prefix="/api/backtest",   tags=["backtest"])
+    app.include_router(live_router,       prefix="/api/live",       tags=["live"])
+    app.include_router(risk_router,       prefix="/api/risk",       tags=["risk"])
 
     # Health endpoints
     @app.get("/health", tags=["health"])
@@ -168,7 +201,6 @@ def create_app() -> FastAPI:
             "trader:ticks", "trader:fills", "trader:logs",
             "trader:signals", "ui:events",
         }
-        # Allow job-specific channels
         if channel not in allowed and not channel.startswith("jobs:"):
             await websocket.close(code=4003)
             return
@@ -187,6 +219,19 @@ def create_app() -> FastAPI:
         finally:
             await pubsub.unsubscribe(channel)
             await pubsub.aclose()
+
+    # ── Serve the React SPA (must come AFTER all API routes) ─────────────────
+    if FRONTEND_DIST.exists():
+        assets_dir = FRONTEND_DIST / "assets"
+        if assets_dir.exists():
+            # Vite outputs hashed JS/CSS bundles under assets/
+            app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+
+        # Catch-all: serve index.html for every path that isn't an API route,
+        # letting React Router handle client-side navigation.
+        @app.get("/{full_path:path}", include_in_schema=False)
+        async def spa_fallback(full_path: str):  # noqa: ARG001
+            return FileResponse(str(FRONTEND_DIST / "index.html"))
 
     return app
 

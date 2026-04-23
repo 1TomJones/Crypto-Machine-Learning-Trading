@@ -41,7 +41,6 @@ RUN pip install --upgrade pip setuptools wheel \
         "stable-baselines3>=2.2" \
         "optuna>=3.5" \
         "shap>=0.44" \
-        "fracdiff>=0.1" \
         "httpx>=0.27" \
         "orjson>=3.9" \
         "slowapi>=0.1.9" \

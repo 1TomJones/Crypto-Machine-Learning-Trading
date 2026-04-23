@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: crypto-ml-trading
+    runtime: python
+    # Root directory is the repo root so both frontend/ and backend/ are reachable
+    buildCommand: >-
+      cd frontend &&
+      npm install &&
+      npm run build &&
+      cd .. &&
+      cp -r frontend/dist backend/frontend_dist &&
+      cd backend &&
+      pip install -e .
+    startCommand: >-
+      cd backend &&
+      alembic upgrade head &&
+      uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ENVIRONMENT
+        value: development
+      - key: LOG_LEVEL
+        value: INFO
+      - key: CORS_ORIGINS
+        value: "http://localhost:3000"
+      - key: ADMIN_USERNAME
+        value: admin
+      # Set ADMIN_PASSWORD_HASH to the bcrypt hash of your chosen password.
+      # Generate with: python -c "from passlib.context import CryptContext; print(CryptContext(schemes=['bcrypt']).hash('your-password'))"
+      - key: ADMIN_PASSWORD_HASH
+        sync: false
