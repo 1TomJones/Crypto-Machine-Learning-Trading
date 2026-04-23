@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.28.0",
-    "lightweight-charts": "^4.1.3",
+    "lightweight-charts": "^5.0.0",
     "lucide-react": "^0.363.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
