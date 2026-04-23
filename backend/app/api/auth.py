@@ -108,7 +108,11 @@ async def get_current_user(
 async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.username == body.username))
     user = result.scalar_one_or_none()
-    if user is None or not pwd_context.verify(body.password, user.hashed_password):
+    try:
+        password_ok = user is not None and pwd_context.verify(body.password, user.hashed_password)
+    except Exception:
+        password_ok = False
+    if user is None or not password_ok:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
         )
