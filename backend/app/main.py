@@ -71,7 +71,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await init_db()
     log.info("database_ready")
 
-    # Seed admin user if ADMIN_PASSWORD_HASH is configured and user doesn't exist
+    # Seed / resync admin user from ADMIN_PASSWORD_HASH on every startup so that
+    # rotating the env var is sufficient to reset the password (no DB access needed).
     if settings.admin_password_hash:
         from sqlalchemy import select as sa_select
 
@@ -83,7 +84,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             result = await session.execute(
                 sa_select(User).where(User.username == settings.admin_username)
             )
-            if result.scalar_one_or_none() is None:
+            existing = result.scalar_one_or_none()
+            if existing is None:
                 session.add(
                     User(
                         username=settings.admin_username,
@@ -94,6 +96,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 )
                 await session.commit()
                 log.info("admin_user_seeded", username=settings.admin_username)
+            elif existing.hashed_password != settings.admin_password_hash:
+                existing.hashed_password = settings.admin_password_hash
+                existing.is_active = True
+                existing.is_superuser = True
+                await session.commit()
+                log.info("admin_user_password_reset", username=settings.admin_username)
 
     # Redis
     redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
