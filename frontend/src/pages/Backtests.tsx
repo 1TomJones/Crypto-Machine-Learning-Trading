@@ -33,8 +33,8 @@ export default function Backtests() {
     pending: "yellow", completed: "green", failed: "red",
   };
 
-  const metrics = selected?.results?.metrics;
-  const curve = (selected?.results?.equity_curve ?? []) as { ts: string; equity: number }[];
+  const metrics = selected?.metrics;
+  const curve = (selected?.equity_curve ?? []) as { ts: string; equity: number }[];
 
   return (
     <div className="space-y-6">
@@ -101,7 +101,7 @@ export default function Backtests() {
                 <Td>{b.config?.symbol}</Td>
                 <Td className="text-xs">{b.config?.start_date} → {b.config?.end_date}</Td>
                 <Td><Badge color={statusColor[b.status] ?? "gray"}>{b.status}</Badge></Td>
-                <Td>{b.results?.metrics?.sharpe != null ? fmt(b.results.metrics.sharpe) : "—"}</Td>
+                <Td>{b.metrics?.sharpe != null ? fmt(b.metrics.sharpe) : "—"}</Td>
                 <Td>
                   <Button size="sm" variant="ghost" onClick={() => setSelected(b)}>View</Button>
                 </Td>

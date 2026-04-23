@@ -1,10 +1,12 @@
 """Data API router – OHLCV retrieval and historical data loading."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Query
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
@@ -80,33 +82,47 @@ async def get_symbols(
     return [dict(r) for r in rows]
 
 
-@router.post("/fetch-history")
-async def fetch_history(
-    symbol: str,
-    interval: str = "1m",
-    start_year: int = 2023,
-    start_month: int = 1,
-    end_year: int = 2024,
-    end_month: int = 12,
+@router.post("/seed")
+async def seed_ohlcv(
+    symbol: str = Query("BTC/USDT"),
+    timeframe: str = Query("1h"),
+    limit: int = Query(500, ge=1, le=1000),
+    db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
-    """Queue an arq job to download historical Binance zip archives."""
-    import arq
+    """Fetch recent candles directly from Binance public REST and store in DB."""
+    binance_symbol = symbol.replace("/", "")  # BTC/USDT → BTCUSDT
+    interval_map = {"1m": "1m", "5m": "5m", "15m": "15m", "1h": "1h", "4h": "4h", "1d": "1d"}
+    interval = interval_map.get(timeframe, "1h")
 
-    from app.config import get_settings
-    settings = get_settings()
-    pool = await arq.create_pool(arq.connections.RedisSettings.from_dsn(settings.redis_url))
-    job = await pool.enqueue_job(
-        "fetch_history",
-        symbol=symbol,
-        interval=interval,
-        start_year=start_year,
-        start_month=start_month,
-        end_year=end_year,
-        end_month=end_month,
-    )
-    await pool.aclose()
-    return {"job_id": job.job_id, "status": "queued"}
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(
+                "https://data-api.binance.vision/api/v3/klines",
+                params={"symbol": binance_symbol, "interval": interval, "limit": limit},
+            )
+            resp.raise_for_status()
+            klines = resp.json()
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Binance API error: {exc}")
+
+    rows = [
+        {
+            "exchange": "binance",
+            "symbol": symbol,
+            "ts": datetime.fromtimestamp(k[0] / 1000, tz=timezone.utc),
+            "open": float(k[1]),
+            "high": float(k[2]),
+            "low": float(k[3]),
+            "close": float(k[4]),
+            "volume": float(k[5]),
+            "source_quality": 1,
+        }
+        for k in klines
+    ]
+    stmt = pg_insert(OHLCVBar).values(rows).on_conflict_do_nothing()
+    await db.execute(stmt)
+    return {"inserted": len(rows), "symbol": symbol, "timeframe": timeframe}
 
 
 @router.get("/quality")

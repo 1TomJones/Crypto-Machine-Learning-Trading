@@ -21,11 +21,20 @@ class StartCommand(BaseModel):
 
 @router.get("/status")
 async def live_status(request: Request, _user: User = Depends(get_current_user)):
+    import time
     redis: aioredis.Redis = request.app.state.redis
     raw = await redis.get("trader:heartbeat")
     if raw is None:
-        return {"trading_enabled": False, "strategies_active": 0, "equity": 0}
-    return orjson.loads(raw)
+        return {"running": False, "trading_enabled": False, "equity": 0.0, "strategies_active": 0}
+    data = orjson.loads(raw)
+    age_s = time.time() - data.get("ts", 0)
+    return {
+        "running": age_s < 30,
+        "trading_enabled": data.get("trading_enabled", False),
+        "equity": data.get("equity", 0.0),
+        "strategies_active": data.get("strategies_active", 0),
+        "age_seconds": age_s,
+    }
 
 
 @router.post("/start")

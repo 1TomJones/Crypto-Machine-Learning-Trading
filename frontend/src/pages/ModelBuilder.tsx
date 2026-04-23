@@ -37,7 +37,7 @@ export default function ModelBuilder() {
   });
 
   const deployMutation = useMutation({
-    mutationFn: (id: number) => api.deployModel(id),
+    mutationFn: (id: string) => api.deployModel(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["models"] }),
   });
 
@@ -96,7 +96,7 @@ export default function ModelBuilder() {
               <Tr key={m.id}>
                 <Td className="font-mono text-xs">{m.id}</Td>
                 <Td>{m.strategy_id}</Td>
-                <Td><Badge color="blue">{m.strategy_type}</Badge></Td>
+                <Td><Badge color="blue">{m.model_type}</Badge></Td>
                 <Td>{m.is_champion ? <Badge color="green">Champion</Badge> : "—"}</Td>
                 <Td>{new Date(m.created_at).toLocaleDateString()}</Td>
                 <Td>

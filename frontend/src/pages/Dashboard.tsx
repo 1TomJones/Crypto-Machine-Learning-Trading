@@ -54,10 +54,10 @@ export default function Dashboard() {
                 <tr key={pos.symbol} className="border-b border-gray-800/50">
                   <td className="px-3 py-2 font-mono">{pos.symbol}</td>
                   <td className="px-3 py-2">{fmt(pos.qty, 6)}</td>
-                  <td className="px-3 py-2">{fmt(pos.avg_price)}</td>
+                  <td className="px-3 py-2">{fmt(Number(pos.avg_entry_price))}</td>
                   <td className="px-3 py-2">{prices[pos.symbol] ? fmt(prices[pos.symbol]) : "—"}</td>
-                  <td className={`px-3 py-2 font-medium ${pos.unrealized_pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
-                    {pos.unrealized_pnl >= 0 ? "+" : ""}{fmt(pos.unrealized_pnl)}
+                  <td className={`px-3 py-2 font-medium ${Number(pos.unrealized_pnl) >= 0 ? "text-green-400" : "text-red-400"}`}>
+                    {Number(pos.unrealized_pnl) >= 0 ? "+" : ""}{fmt(Number(pos.unrealized_pnl))}
                   </td>
                 </tr>
               ))}

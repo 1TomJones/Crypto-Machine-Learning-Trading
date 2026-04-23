@@ -37,14 +37,14 @@ export const api = {
   // OHLCV
   ohlcv: (symbol: string, timeframe: string, limit = 500) =>
     request<{ ts: string; open: number; high: number; low: number; close: number; volume: number }[]>(
-      `/data/ohlcv?symbol=${symbol}&timeframe=${timeframe}&limit=${limit}`
+      `/data/ohlcv?symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}&limit=${limit}`
     ),
-  symbols: () => request<string[]>("/data/symbols"),
-  fetchHistory: (symbol: string, timeframe: string, since: string) =>
-    request<{ job_id: string }>("/data/fetch-history", {
-      method: "POST",
-      body: JSON.stringify({ symbol, timeframe, since }),
-    }),
+  symbols: () => request<{ exchange: string; symbol: string; bar_count: number }[]>("/data/symbols"),
+  seedData: (symbol: string, timeframe: string, limit = 500) =>
+    request<{ inserted: number; symbol: string; timeframe: string }>(
+      `/data/seed?symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}&limit=${limit}`,
+      { method: "POST" }
+    ),
 
   // Strategies
   strategies: () => request<Strategy[]>("/strategies"),
@@ -56,12 +56,12 @@ export const api = {
 
   // Model training
   models: () => request<ModelArtifact[]>("/models"),
-  trainModel: (strategyId: string, params: Record<string, unknown>) =>
+  trainModel: (strategyId: string, config: Record<string, unknown>) =>
     request<{ job_id: string }>("/models/train", {
       method: "POST",
-      body: JSON.stringify({ strategy_id: strategyId, params }),
+      body: JSON.stringify({ strategy_id: strategyId, config }),
     }),
-  deployModel: (id: number) =>
+  deployModel: (id: string) =>
     request<void>(`/models/${id}/deploy`, { method: "POST" }),
   jobStatus: (jobId: string) =>
     request<{ status: string; result?: unknown }>(`/models/jobs/${jobId}`),
@@ -77,10 +77,9 @@ export const api = {
 
   // Live trading
   liveStatus: () => request<LiveStatus>("/live/status"),
-  startTrader: () => request<void>("/live/start", { method: "POST" }),
-  stopTrader: () => request<void>("/live/stop", { method: "POST" }),
-  killSwitch: (reason: string) =>
-    request<void>("/live/kill", { method: "POST", body: JSON.stringify({ reason }) }),
+  startTrader: (strategy_id: string) => request<void>("/live/start", { method: "POST", body: JSON.stringify({ strategy_id }) }),
+  stopTrader: (strategy_id: string) => request<void>("/live/stop", { method: "POST", body: JSON.stringify({ strategy_id }) }),
+  killSwitch: () => request<void>("/live/kill", { method: "POST" }),
   positions: () => request<Position[]>("/live/positions"),
   orders: () => request<Order[]>("/live/orders"),
 
@@ -93,35 +92,40 @@ export const api = {
 
 // Types
 export interface Strategy {
-  id: string; name: string; description: string;
+  id: string; name: string; paradigm: string;
+  symbol: string; timeframe: string;
   config: Record<string, unknown>; status: string;
   created_at: string; updated_at: string;
 }
 export interface ModelArtifact {
-  id: number; strategy_id: string; artifact_path: string;
-  strategy_type: string; cv_scores: unknown; is_champion: boolean; created_at: string;
+  id: string; strategy_id: string; artifact_path: string;
+  model_type: string; metrics: Record<string, unknown> | null;
+  is_champion: boolean; created_at: string;
 }
 export interface BacktestConfig {
   strategy_id: string; symbol: string; timeframe: string;
   start_date: string; end_date: string;
-  initial_capital?: number; model_path?: string;
+  initial_capital?: number;
 }
 export interface BacktestResult {
-  id: string; strategy_id: string; config: BacktestConfig;
-  results?: { metrics: Record<string, number>; equity_curve: unknown[]; trade_log: unknown[] };
-  status: string; created_at: string;
+  id: string; strategy_id: string; status: string;
+  config: BacktestConfig;
+  metrics: Record<string, number> | null;
+  equity_curve: { ts: string; equity: number }[] | null;
+  trade_log: unknown[] | null;
+  created_at: string;
 }
 export interface LiveStatus {
   running: boolean; trading_enabled: boolean;
-  equity: number; ts: string; age_seconds: number;
+  equity: number; strategies_active: number; age_seconds?: number;
 }
 export interface Position {
-  symbol: string; qty: number; avg_price: number; unrealized_pnl: number;
+  symbol: string; qty: number; avg_entry_price: number; unrealized_pnl: number;
 }
 export interface Order {
-  client_order_id: string; exchange_order_id: string; symbol: string;
-  side: string; order_type: string; qty: number; filled_qty: number;
-  avg_fill_price: number; status: string; created_at: string;
+  id: string; client_order_id: string; symbol: string;
+  side: string; order_type: string; qty: number;
+  status: string; created_at: string;
 }
 export interface RiskSettings {
   max_daily_loss_pct: number; max_drawdown_pct: number;
@@ -130,5 +134,6 @@ export interface RiskSettings {
   symbol_whitelist: string[];
 }
 export interface RiskMetrics {
-  var_95: number; es_95: number; current_drawdown: number; daily_pnl: number;
+  var_95: number | null; es_95: number | null;
+  current_drawdown: number; daily_pnl: number | null;
 }
