@@ -16,7 +16,7 @@ router = APIRouter()
 
 
 class StartCommand(BaseModel):
-    strategy_id: str
+    strategy_id: str | None = None
 
 
 @router.get("/status")
@@ -48,7 +48,7 @@ async def start_strategy(
         "trader:cmd",
         orjson.dumps({"cmd": "start_strategy", "strategy_id": body.strategy_id}).decode(),
     )
-    return {"message": "start command sent", "strategy_id": body.strategy_id}
+    return {"message": "start command sent"}
 
 
 @router.post("/stop")

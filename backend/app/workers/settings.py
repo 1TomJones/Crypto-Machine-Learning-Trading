@@ -35,7 +35,7 @@ async def train_model(ctx: dict, job_id: str, strategy_id: str, params: dict) ->
             start    = params.get("start_date", "2020-01-01")
             end      = params.get("end_date", "2024-01-01")
             rows = await session.execute(text(
-                "SELECT ts, open, high, low, close, volume FROM ohlcv_bars "
+                "SELECT ts, open, high, low, close, volume FROM ohlcv "
                 "WHERE symbol=:sym AND timeframe=:tf AND ts BETWEEN :s AND :e ORDER BY ts"
             ), {"sym": symbol, "tf": tf, "s": start, "e": end})
             df = pd.DataFrame(rows.fetchall(), columns=["ts","open","high","low","close","volume"])
@@ -74,7 +74,7 @@ async def train_model(ctx: dict, job_id: str, strategy_id: str, params: dict) ->
 
         async with AsyncSession(engine) as session:
             await session.execute(text(
-                "INSERT INTO model_artifacts (strategy_id, artifact_path, strategy_type, cv_scores, is_champion) "
+                "INSERT INTO model_registry (strategy_id, artifact_path, model_type, metrics, is_champion) "
                 "VALUES (:sid, :path, :stype, :scores::jsonb, FALSE)"
             ), {
                 "sid": strategy_id, "path": path, "stype": model_type,
@@ -83,7 +83,7 @@ async def train_model(ctx: dict, job_id: str, strategy_id: str, params: dict) ->
             await session.commit()
 
         log.info("worker_train_done", job_id=job_id, path=path)
-        return {"path": path, "cv_scores": scores}
+        return {"path": path, "metrics": scores}
     except Exception as exc:
         log.error("worker_train_error", job_id=job_id, error=str(exc))
         return {"error": str(exc)}
@@ -107,7 +107,7 @@ async def run_backtest(ctx: dict, backtest_id: str, config: dict) -> dict:
         engine = create_async_engine(settings.database_url)
         async with AsyncSession(engine) as session:
             rows = await session.execute(text(
-                "SELECT ts, open, high, low, close, volume FROM ohlcv_bars "
+                "SELECT ts, open, high, low, close, volume FROM ohlcv "
                 "WHERE symbol=:sym AND timeframe=:tf AND ts BETWEEN :s AND :e ORDER BY ts"
             ), {
                 "sym": config["symbol"], "tf": config["timeframe"],
@@ -174,7 +174,7 @@ async def fetch_history(ctx: dict, symbol: str, timeframe: str, since: str, limi
         async with AsyncSession(engine) as session:
             for row in rows:
                 await session.execute(text("""
-                    INSERT INTO ohlcv_bars (ts, symbol, timeframe, open, high, low, close, volume)
+                    INSERT INTO ohlcv (ts, symbol, timeframe, open, high, low, close, volume)
                     VALUES (:ts, :sym, :tf, :o, :h, :l, :c, :v)
                     ON CONFLICT (ts, symbol, timeframe) DO UPDATE
                     SET open=EXCLUDED.open, high=EXCLUDED.high, low=EXCLUDED.low,

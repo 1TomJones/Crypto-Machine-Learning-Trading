@@ -29,8 +29,8 @@ export default function ModelBuilder() {
     mutationFn: () =>
       api.trainModel(strategyId, { model_type: modelType, symbol, start_date: startDate, end_date: endDate }),
     onSuccess: (res) => {
-      setJobId(res.job_id);
-      setJobMsg(`Job submitted: ${res.job_id}`);
+      setJobId(res.model_id);
+      setJobMsg(`Training started: ${res.model_id}`);
       qc.invalidateQueries({ queryKey: ["models"] });
     },
     onError: (e) => setJobMsg(`Error: ${(e as Error).message}`),
@@ -89,25 +89,52 @@ export default function ModelBuilder() {
         <CardHeader><CardTitle>Model Artifacts</CardTitle></CardHeader>
         <Table>
           <Thead>
-            <tr><Th>ID</Th><Th>Strategy</Th><Th>Type</Th><Th>Champion</Th><Th>Created</Th><Th></Th></tr>
+            <tr><Th>ID</Th><Th>Strategy</Th><Th>Type</Th><Th>Status</Th><Th>Champion</Th><Th>Created</Th><Th></Th></tr>
           </Thead>
           <Tbody>
-            {(models as ModelArtifact[]).map((m) => (
+            {(models as ModelArtifact[]).map((m) => {
+              const status = (m.metrics as Record<string, unknown> | null)?.status as string | undefined;
+              const progress = (m.metrics as Record<string, unknown> | null)?.progress as string | undefined;
+              const accuracy = (m.metrics as Record<string, unknown> | null)?.accuracy as number | undefined;
+              const error = (m.metrics as Record<string, unknown> | null)?.error as string | undefined;
+              return (
               <Tr key={m.id}>
-                <Td className="font-mono text-xs">{m.id}</Td>
-                <Td>{m.strategy_id}</Td>
+                <Td className="font-mono text-xs">{m.id.slice(0, 8)}</Td>
+                <Td className="font-mono text-xs">{m.strategy_id.slice(0, 8)}</Td>
                 <Td><Badge color="blue">{m.model_type}</Badge></Td>
+                <Td>
+                  {status === "training" && (
+                    <span className="flex flex-col gap-0.5">
+                      <Badge color="yellow">Training</Badge>
+                      {progress && <span className="text-xs text-gray-400">{progress}</span>}
+                    </span>
+                  )}
+                  {status === "completed" && (
+                    <span className="flex flex-col gap-0.5">
+                      <Badge color="green">Ready</Badge>
+                      {accuracy != null && <span className="text-xs text-gray-400">acc {(accuracy * 100).toFixed(1)}%</span>}
+                    </span>
+                  )}
+                  {status === "failed" && (
+                    <span className="flex flex-col gap-0.5">
+                      <Badge color="red">Failed</Badge>
+                      {error && <span className="text-xs text-red-400 max-w-xs truncate">{error}</span>}
+                    </span>
+                  )}
+                  {!status && "—"}
+                </Td>
                 <Td>{m.is_champion ? <Badge color="green">Champion</Badge> : "—"}</Td>
                 <Td>{new Date(m.created_at).toLocaleDateString()}</Td>
                 <Td>
-                  {!m.is_champion && (
+                  {status === "completed" && !m.is_champion && (
                     <Button size="sm" variant="secondary" onClick={() => deployMutation.mutate(m.id)}>
                       <Rocket size={12} /> Deploy
                     </Button>
                   )}
                 </Td>
               </Tr>
-            ))}
+              );
+            })}
           </Tbody>
         </Table>
       </Card>

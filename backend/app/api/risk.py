@@ -65,13 +65,15 @@ async def risk_metrics(
 ):
     positions_result = await db.execute(select(Position))
     positions = positions_result.scalars().all()
-    total_equity = sum(float(p.avg_entry_price) * abs(float(p.qty)) for p in positions)
+    total_notional = sum(float(p.avg_entry_price) * abs(float(p.qty)) for p in positions)
     total_unrealized = sum(float(p.unrealized_pnl) for p in positions)
+    total_realized = sum(float(p.realized_pnl) for p in positions)
     return {
-        "total_position_notional": total_equity,
+        "var_95": None,
+        "es_95": None,
+        "current_drawdown": 0.0,
+        "daily_pnl": total_realized if positions else None,
+        "total_position_notional": total_notional,
         "total_unrealized_pnl": total_unrealized,
         "open_positions": len(positions),
-        "var_95": None,  # Populated by live engine
-        "es_99": None,
-        "daily_pnl": None,
     }

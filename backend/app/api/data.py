@@ -16,10 +16,12 @@ from app.schemas import OHLCVSchema
 
 router = APIRouter()
 
+_BUCKET_SECONDS = {"5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}
+
 
 @router.get("/ohlcv", response_model=list[OHLCVSchema])
 async def get_ohlcv(
-    symbol: str = Query(..., description="e.g. BTCUSDT"),
+    symbol: str = Query(...),
     exchange: str = Query("binance"),
     timeframe: str = Query("1m"),
     start: datetime | None = None,
@@ -28,30 +30,43 @@ async def get_ohlcv(
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
-    # Map timeframe → continuous aggregate view name
-    view_map = {"5m": "ohlcv_5m", "15m": "ohlcv_15m", "1h": "ohlcv_1h",
-                "4h": "ohlcv_4h", "1d": "ohlcv_1d"}
-    if timeframe in view_map:
-        tbl = view_map[timeframe]
-        q = f"""
-            SELECT 0 AS id, exchange, symbol, bucket AS ts, open, high, low, close, volume, 1 AS source_quality
-            FROM {tbl}
-            WHERE symbol = :sym AND exchange = :exch
-        """
-        params: dict = {"sym": symbol, "exch": exchange}
+    if timeframe in _BUCKET_SECONDS:
+        # Aggregate using epoch bucketing — works without TimescaleDB
+        secs = _BUCKET_SECONDS[timeframe]
+        where_extra = ""
+        params: dict = {"sym": symbol, "exch": exchange, "lim": limit}
         if start:
-            q += " AND bucket >= :start"
+            where_extra += " AND ts >= :start"
             params["start"] = start
         if end:
-            q += " AND bucket <= :end"
+            where_extra += " AND ts <= :end"
             params["end"] = end
-        q += " ORDER BY bucket DESC LIMIT :lim"
-        params["lim"] = limit
-        result = await db.execute(text(q), params)
+
+        q = text(f"""
+            WITH b AS (
+                SELECT exchange, symbol,
+                       to_timestamp(FLOOR(EXTRACT(EPOCH FROM ts) / {secs}) * {secs}) AS bucket,
+                       open, high, low, close, volume, ts
+                FROM ohlcv
+                WHERE symbol = :sym AND exchange = :exch{where_extra}
+            )
+            SELECT 0 AS id, exchange, symbol, bucket AS ts,
+                   (array_agg(open  ORDER BY ts))[1]      AS open,
+                   max(high)                               AS high,
+                   min(low)                                AS low,
+                   (array_agg(close ORDER BY ts DESC))[1]  AS close,
+                   sum(volume)                             AS volume,
+                   1                                       AS source_quality
+            FROM b
+            GROUP BY exchange, symbol, bucket
+            ORDER BY bucket DESC
+            LIMIT :lim
+        """)
+        result = await db.execute(q, params)
         rows = result.mappings().all()
         return [OHLCVSchema(**dict(r)) for r in rows]
 
-    # Default: raw 1m table
+    # Raw 1m table
     q = select(OHLCVBar).where(
         OHLCVBar.symbol == symbol, OHLCVBar.exchange == exchange
     )
@@ -91,7 +106,7 @@ async def seed_ohlcv(
     _user: User = Depends(get_current_user),
 ):
     """Fetch recent candles directly from Binance public REST and store in DB."""
-    binance_symbol = symbol.replace("/", "")  # BTC/USDT → BTCUSDT
+    binance_symbol = symbol.replace("/", "")
     interval_map = {"1m": "1m", "5m": "5m", "15m": "15m", "1h": "1h", "4h": "4h", "1d": "1d"}
     interval = interval_map.get(timeframe, "1h")
 

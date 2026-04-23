@@ -57,7 +57,7 @@ export const api = {
   // Model training
   models: () => request<ModelArtifact[]>("/models"),
   trainModel: (strategyId: string, config: Record<string, unknown>) =>
-    request<{ job_id: string }>("/models/train", {
+    request<{ model_id: string; status: string }>("/models/train", {
       method: "POST",
       body: JSON.stringify({ strategy_id: strategyId, config }),
     }),
@@ -77,8 +77,8 @@ export const api = {
 
   // Live trading
   liveStatus: () => request<LiveStatus>("/live/status"),
-  startTrader: (strategy_id: string) => request<void>("/live/start", { method: "POST", body: JSON.stringify({ strategy_id }) }),
-  stopTrader: (strategy_id: string) => request<void>("/live/stop", { method: "POST", body: JSON.stringify({ strategy_id }) }),
+  startTrader: () => request<void>("/live/start", { method: "POST", body: JSON.stringify({}) }),
+  stopTrader: () => request<void>("/live/stop", { method: "POST", body: JSON.stringify({}) }),
   killSwitch: () => request<void>("/live/kill", { method: "POST" }),
   positions: () => request<Position[]>("/live/positions"),
   orders: () => request<Order[]>("/live/orders"),
@@ -125,6 +125,7 @@ export interface Position {
 export interface Order {
   id: string; client_order_id: string; symbol: string;
   side: string; order_type: string; qty: number;
+  filled_qty: number; avg_fill_price: number | null;
   status: string; created_at: string;
 }
 export interface RiskSettings {

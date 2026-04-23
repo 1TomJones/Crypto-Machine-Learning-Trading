@@ -32,8 +32,8 @@ export default function Dashboard() {
       {/* KPI row */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <StatCard label="Equity" value={`£${fmt(equity)}`} />
-        <StatCard label="Daily VaR 95%" value={metrics ? pct(metrics.var_95) : "—"} />
-        <StatCard label="ES 95%" value={metrics ? pct(metrics.es_95) : "—"} />
+        <StatCard label="Daily VaR 95%" value={metrics?.var_95 != null ? pct(metrics.var_95) : "—"} />
+        <StatCard label="ES 95%" value={metrics?.es_95 != null ? pct(metrics.es_95) : "—"} />
         <StatCard label="Drawdown" value={metrics ? pct(metrics.current_drawdown) : "—"} />
       </div>
 
