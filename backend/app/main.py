@@ -77,14 +77,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     _plain_pw = settings.admin_password
     _hash_pw = settings.admin_password_hash
     if _plain_pw or _hash_pw:
-        from passlib.context import CryptContext as _CryptContext
+        import bcrypt as _bcrypt
         from sqlalchemy import select as sa_select
 
         from app.database import _get_session_factory
         from app.db_models import User
 
-        _pwd = _CryptContext(schemes=["bcrypt"], deprecated="auto")
-        target_hash = _pwd.hash(_plain_pw) if _plain_pw else _hash_pw
+        if _plain_pw:
+            target_hash = _bcrypt.hashpw(_plain_pw.encode(), _bcrypt.gensalt()).decode()
+        else:
+            target_hash = _hash_pw
 
         factory = _get_session_factory()
         async with factory() as session:
