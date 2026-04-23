@@ -5,7 +5,7 @@ set -e
 
 echo "==> Building React frontend..."
 cd frontend
-npm install
+npm install --legacy-peer-deps
 npx vite build   # call vite directly to skip strict tsc type-checking
 cd ..
 rm -rf backend/frontend_dist
